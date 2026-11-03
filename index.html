@@ -362,6 +362,12 @@ footer{background:var(--surface-alt);border-top:1px solid var(--line);margin-top
 .feedback-textarea{min-height:110px;resize:vertical}
 #formStatus{font-size:14px;margin-top:12px;text-align:center;display:none;font-weight:600}
 .modal-note{font-size:12.5px;color:var(--muted);margin-top:14px;text-align:center}
+.manual-send{border-top:1px solid var(--line);margin-top:20px;padding-top:16px}
+.manual-send .modal-note.left{text-align:left;margin-top:0}
+.manual-btns{display:flex;gap:8px;margin-top:12px}
+.manual-btns .btn{flex:1;padding:11px 10px;font-size:13.5px}
+#manualStatus{min-height:18px}
+.hp-field{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 
 /* ============ Reveal (only when JS is running, so content is never stuck hidden) ============ */
 html.js .rv{opacity:0;transform:translateY(20px);transition:opacity .6s ease,transform .6s cubic-bezier(.2,.8,.2,1)}
@@ -1084,6 +1090,7 @@ html.js .rv.in{opacity:1;transform:none}
         <a href="#why">Why it is free</a>
         <a href="#community">Early supporters</a>
         <a href="#dev">About the developer</a>
+        <a href="privacy.html">Privacy policy</a>
         <a href="#top">Back to top</a>
       </div>
     </div>
@@ -1122,7 +1129,18 @@ html.js .rv.in{opacity:1;transform:none}
       <textarea name="message" id="feedbackMessage" class="feedback-textarea" placeholder="What should I add or fix?" required></textarea>
       <button type="submit" class="btn btn-p" style="width:100%;padding:14px;font-size:15px">Send feedback</button>
       <div id="formStatus" role="status" aria-live="polite"></div>
+      <input type="hidden" name="_subject" id="reportSubject" value="PS Workspace website feedback">
+      <input class="hp-field" type="text" name="_gotcha" id="reportGotcha" tabindex="-1" autocomplete="off" aria-hidden="true">
       <p class="modal-note">Messages are sent to Formspree so they reach my inbox. Nothing else on this page uses a server.</p>
+      <div class="manual-send">
+        <span class="step-title">If the button above does not go through</span>
+        <p class="modal-note left">Some privacy blockers stop the form from reaching its server. These two need no server at all: the first puts your message on the clipboard, the second hands it to your own mail app. Nothing leaves this page when you use them, and nothing is sent until you press Send yourself.</p>
+        <div class="manual-btns">
+          <button id="copyReportBtn" class="btn btn-o" type="button">Copy message</button>
+          <button id="mailReportBtn" class="btn btn-o" type="button">Open mail app</button>
+        </div>
+        <div id="manualStatus" class="modal-note" role="status" aria-live="polite"></div>
+      </div>
     </form>
   </div>
 </div>
@@ -1276,9 +1294,74 @@ html.js .rv.in{opacity:1;transform:none}
   addBtn.addEventListener('click', addUser);
   nameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addUser(); } });
 
-  /* 7 · Feedback form -> Formspree */
+  /* 7 · Feedback form -> Formspree, plus a fallback that needs no server */
   var form = document.getElementById('feedbackForm');
   var status = document.getElementById('formStatus');
+  var manualStatus = document.getElementById('manualStatus');
+  var copyReportBtn = document.getElementById('copyReportBtn');
+  var mailReportBtn = document.getElementById('mailReportBtn');
+  var subjectField = document.getElementById('reportSubject');
+  var emailField = document.getElementById('feedbackEmail');
+  var messageField = document.getElementById('feedbackMessage');
+
+  var SUPPORT_EMAIL = 'pratyush60069@outlook.com';
+
+  function reportParts() {
+    var who = feedbackName.value.trim();
+    var reply = emailField.value.trim();
+    var text = messageField.value.trim();
+    return {
+      subject: 'PS Workspace feedback' + (who ? ' — ' + who : ''),
+      body: (text || '(no message typed)') + '\n\n'
+        + 'Name: ' + (who || '(not given)') + '\n'
+        + 'Reply to: ' + (reply || '(not given)') + '\n'
+        + 'From: the ps-workspace.online feedback form'
+    };
+  }
+
+  function sayManual(text) { manualStatus.textContent = text; }
+
+  function copyWithCommand(text) {
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.top = '-9999px';
+    document.body.appendChild(area);
+    area.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+    document.body.removeChild(area);
+    return ok;
+  }
+
+  function copyText(text, done) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(copyWithCommand(text)); });
+      return;
+    }
+    done(copyWithCommand(text));
+  }
+
+  copyReportBtn.addEventListener('click', function () {
+    var p = reportParts();
+    copyText('To: ' + SUPPORT_EMAIL + '\nSubject: ' + p.subject + '\n\n' + p.body, function (ok) {
+      sayManual(ok ? 'Copied. Paste it into any mail program or app and send.'
+        : 'The browser blocked copying. Try Open mail app instead.');
+    });
+  });
+
+  mailReportBtn.addEventListener('click', function () {
+    var p = reportParts();
+    var url = 'mailto:' + SUPPORT_EMAIL
+      + '?subject=' + encodeURIComponent(p.subject)
+      + '&body=' + encodeURIComponent(p.body);
+    // A mailto longer than this gets truncated or dropped by several handlers.
+    if (url.length > 1900) { sayManual('That message is too long for a mail link — use Copy message instead.'); return; }
+    window.location.href = url;
+    sayManual('Your mail app should open now. If nothing opened, use Copy message.');
+  });
+
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     var submitBtn = form.querySelector('button[type="submit"]');
@@ -1286,6 +1369,9 @@ html.js .rv.in{opacity:1;transform:none}
 
     var typed = feedbackName.value.trim();
     if (typed && !users.includes(typed)) { users.push(typed); saveUsers(); renderCommunity(); }
+
+    subjectField.value = reportParts().subject;
+    sayManual('');
 
     submitBtn.disabled = true;
     submitBtn.textContent = 'Sending…';
@@ -1301,12 +1387,12 @@ html.js .rv.in{opacity:1;transform:none}
           form.reset();
         } else {
           status.style.color = '#a4262c';
-          status.textContent = 'Could not send it. Please try again in a minute.';
+          status.textContent = 'Could not send it. Your message is still typed below — use Copy message or Open mail app.';
         }
       })
       .catch(function () {
         status.style.color = '#a4262c';
-        status.textContent = 'Network problem — check your internet and try again.';
+        status.textContent = 'The form could not reach its server. Your message is still typed — use Copy message or Open mail app.';
       })
       .finally(function () {
         submitBtn.disabled = false;
